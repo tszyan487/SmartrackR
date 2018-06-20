@@ -15,7 +15,7 @@ buses <- data.frame()
 for(i in 1:length(tfv_file))
 {
   buses <- rbind(buses,
-                     read.csv(tfv_file[i], header = TRUE,stringsAsFactors = F,skip = 1))
+                     read.csv(tfv_file[i], header = TRUE,stringsAsFactors = F))
 }
 
 setwd(work_dir)
@@ -25,14 +25,11 @@ setwd(work_dir)
 buses <- buses %>% filter(Geofence.Name != "")
 
 # format arrival time and separate geofence name into columns, then order by bus and timestamp
-buses <- buses %>% mutate(arrival = as.POSIXct(strptime(gsub('[\\.]','',Enter.Time), format = '%d/%m/%Y %I:%M:%S %p')) ,
+buses <- buses %>% mutate(arrival = as.POSIXct(strptime(gsub('[\\.]','',Enter.Time), format = '%d/%m/%Y %H:%M')) ,
                          project = unlist(lapply(strsplit(Geofence.Name," - "),'[[',2)),
                          stop.order = as.numeric(unlist(lapply(strsplit(Geofence.Name," - "),'[[',3))),
-                         destination = unlist(lapply(strsplit(Geofence.Name," - "),'[[',4))) 
-# %>%
-# arrange(Resource.Name, seconds(Enter.Time))
-
-
+                         destination = unlist(lapply(strsplit(Geofence.Name," - "),'[[',4))) %>%
+  arrange(Resource.Name, seconds(Enter.Time))
 
 #format dwell time into seconds
 tmp <- strsplit(buses$Time.Inside.Geofence..hh.mm.ss., split=":") %>% lapply(as.numeric,1)
@@ -62,6 +59,12 @@ buses$type <- c(rep(0,length(buses$Resource.Name)))
 
 
 #Iterate to assign bus type based on stopping pattern
+
+############
+#ISSUE!!: Currently if a bus enters/exits the same geofence more than once (happening at Oakleigh) - 
+#the trip is filtered out, even though it might be a legitimate replacement bus
+############
+
 while(stops <= length(buses$origin)) {
   org = buses$origin
   dest = buses$destination
@@ -81,7 +84,7 @@ while(stops <= length(buses$origin)) {
       (lead(org,3)[stops] == express[2] && lead(dest,3)[stops] == first(express))
     ))
     {
-      buses$type[stops:(stops+length(express)-1)] <- "Express"
+      buses$type[stops:(stops+length(express)-2)] <- "Express"
       stops <- stops+length(express)-1
   }
   
@@ -104,7 +107,7 @@ while(stops <= length(buses$origin)) {
     (lead(org,5)[stops] == ltd_express[2] && lead(dest,5)[stops] == first(ltd_express))
   ))
   {
-    buses$type[stops:(stops+length(ltd_express)-1)] <- "LTD ltd_express"
+    buses$type[stops:(stops+length(ltd_express)-2)] <- "LTD ltd_express"
     stops <- stops+length(ltd_express)-1
   }
   
@@ -129,7 +132,7 @@ while(stops <= length(buses$origin)) {
     (lead(org,6)[stops] == sas[2] && lead(dest,6)[stops] == first(sas))
   ))
   {
-    buses$type[stops:(stops+length(sas)-1)] <- "SAS"
+    buses$type[stops:(stops+length(sas)-2)] <- "SAS"
     stops <- stops+length(sas)-1
   }
   else {
