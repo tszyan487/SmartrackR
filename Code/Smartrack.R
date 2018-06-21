@@ -22,14 +22,16 @@ setwd(work_dir)
 # buses <- read.csv("C://Data/Smartrack/Data/TFV - CTD_13062018.csv", header = T, stringsAsFactors = F) %>% as.tbl()
 # validLegs <- read.csv("C://Data/Smartrack/ValidLegs.csv", stringsAsFactors = F)
 
-buses <- buses %>% filter(Geofence.Name != "")
 
 # format arrival time and separate geofence name into columns, then order by bus and timestamp
-buses <- buses %>% mutate(arrival = as.POSIXct(strptime(gsub('[\\.]','',Enter.Time), format = '%d/%m/%Y %H:%M')) ,
+buses <- buses %>% mutate(arrival = as.POSIXct(strptime(buses$Enter.Time, format = '%d/%m/%Y %I:%M:%S %p')),
                          project = unlist(lapply(strsplit(Geofence.Name," - "),'[[',2)),
                          stop.order = as.numeric(unlist(lapply(strsplit(Geofence.Name," - "),'[[',3))),
-                         destination = unlist(lapply(strsplit(Geofence.Name," - "),'[[',4))) %>%
-  arrange(Resource.Name, seconds(Enter.Time))
+                         destination = unlist(lapply(strsplit(Geofence.Name," - "),'[[',4))) 
+# %>%
+# arrange(Resource.Name, seconds(Enter.Time))
+
+
 
 #format dwell time into seconds
 tmp <- strsplit(buses$Time.Inside.Geofence..hh.mm.ss., split=":") %>% lapply(as.numeric,1)
@@ -59,12 +61,6 @@ buses$type <- c(rep(0,length(buses$Resource.Name)))
 
 
 #Iterate to assign bus type based on stopping pattern
-
-############
-#ISSUE!!: Currently if a bus enters/exits the same geofence more than once (happening at Oakleigh) - 
-#the trip is filtered out, even though it might be a legitimate replacement bus
-############
-
 while(stops <= length(buses$origin)) {
   org = buses$origin
   dest = buses$destination
@@ -84,7 +80,7 @@ while(stops <= length(buses$origin)) {
       (lead(org,3)[stops] == express[2] && lead(dest,3)[stops] == first(express))
     ))
     {
-      buses$type[stops:(stops+length(express)-2)] <- "Express"
+      buses$type[stops:(stops+length(express)-1)] <- "Express"
       stops <- stops+length(express)-1
   }
   
@@ -107,7 +103,7 @@ while(stops <= length(buses$origin)) {
     (lead(org,5)[stops] == ltd_express[2] && lead(dest,5)[stops] == first(ltd_express))
   ))
   {
-    buses$type[stops:(stops+length(ltd_express)-2)] <- "LTD ltd_express"
+    buses$type[stops:(stops+length(ltd_express)-1)] <- "LTD ltd_express"
     stops <- stops+length(ltd_express)-1
   }
   
@@ -132,7 +128,7 @@ while(stops <= length(buses$origin)) {
     (lead(org,6)[stops] == sas[2] && lead(dest,6)[stops] == first(sas))
   ))
   {
-    buses$type[stops:(stops+length(sas)-2)] <- "SAS"
+    buses$type[stops:(stops+length(sas)-1)] <- "SAS"
     stops <- stops+length(sas)-1
   }
   else {
@@ -176,18 +172,6 @@ railRep <- railRep %>% mutate(peak = sapply(tripDeparture,function(x){
 # if the destinationi is Caulfield, Westall or Malvern, the dwelltime = 0, then dwelltime/60
 railRep$dwellAdj <- ifelse(railRep$destination %in% startpoints, 0, railRep$dwellTime/60)
                                 
-# travel_times <- railRep %>% 
-#   filter(difftime(arrival,departure, tz = "AEST", units = "mins") < 50,
-#          !(tripId %in% c(77,127))) %>% 
-#   group_by(tripId, type, peak) %>%
-#   summarise(TripTime = sum(difftime(arrival,departure, tz = "AEST", units = "mins")+dwellAdj))
-
-# travel_times <- travel_times %>% group_by(type, peak) %>%
-#   summarise(TravelTimes = mean(TripTime))
-
-# write.csv(travel_times,paste0("test2.csv"))
-
-
 # write.csv(travel_times,paste0("CTD Bus Travel Times - ",date(Sys.time()-days(1)),".csv"))
 
 
@@ -196,8 +180,8 @@ railRep$dwellAdj <- ifelse(railRep$destination %in% startpoints, 0, railRep$dwel
 #Calculate time for each leg of journey
 
 leg_times <- railRep %>%
-  filter(difftime(arrival,departure, tz = "AEST", units = "mins") < 50,
-         !(tripId %in% c(77,127))) %>%
+  filter(difftime(arrival,departure, tz = "AEST", units = "mins") < 50) %>%
+         # !(tripId %in% c(77,127))) %>%
   group_by(tripId, origin, destination, peak, type, departure, arrival) %>%
   summarise(TripTime = sum(difftime(arrival,departure, tz = "AEST", units = "mins")+dwellAdj))
 
@@ -213,7 +197,6 @@ merge_times <- cbind("CTD_ID" = sprintf("CTD_ID_%06d", 1:nrow(merge_times)), mer
 merge_times$tripId <- as.character(merge_times$tripId)
 
 # Validation 
-
 tripTime_check <- subset(merge_times, merge_times$TripTime >= 30)
 
 merge_times <- merge_times[c( "CTD_ID"
@@ -232,3 +215,14 @@ merge_times <- merge_times[c( "CTD_ID"
 )]
 
 write.csv(merge_times,paste0("CTD Bus Leg Time.csv"))
+
+travel_times <- railRep %>%
+  filter(difftime(arrival,departure, tz = "AEST", units = "mins") < 50) %>%
+         # !(tripId %in% c(77,127))) %>%
+  group_by(tripId, type, peak) %>%
+  summarise(TripTime = sum(difftime(arrival,departure, tz = "AEST", units = "mins")+dwellAdj))
+
+# travel_times <- travel_times %>% group_by(type, peak) %>%
+#   summarise(TravelTimes = mean(TripTime))
+
+write.csv(travel_times,paste0("CTD Bus Travel Time.csv"))
